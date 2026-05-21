@@ -11,6 +11,7 @@ import org.jetlinks.marketplace.CapabilityInstallRequest;
 import org.jetlinks.marketplace.InstalledResource;
 import org.jetlinks.marketplace.ProgressState;
 import org.jetlinks.marketplace.client.CapabilityResourceManager;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -31,7 +32,7 @@ public class MarketplaceClientResourceController {
 
     private final CapabilityResourceManager resourceManager;
 
-    @PostMapping("/capabilities/{id}/{version}/_install")
+    @PostMapping(value = "/capabilities/{id}/{version}/_install", produces = MediaType.APPLICATION_NDJSON_VALUE)
     @Operation(summary = "安装能力")
     @ResourceAction(id = "install", name = "安装")
     public Flux<ProgressState<InstalledResource>> install(@PathVariable String id,
@@ -42,7 +43,7 @@ public class MarketplaceClientResourceController {
             .flatMapMany(payload -> resourceManager.install(id, version, payload));
     }
 
-    @PostMapping("/capabilities/{id}/{version}/_upgrade")
+    @PostMapping(value = "/capabilities/{id}/{version}/_upgrade", produces = MediaType.APPLICATION_NDJSON_VALUE)
     @Operation(summary = "升级能力")
     @ResourceAction(id = "upgrade", name = "升级")
     public Flux<ProgressState<InstalledResource>> upgrade(@PathVariable String id,
