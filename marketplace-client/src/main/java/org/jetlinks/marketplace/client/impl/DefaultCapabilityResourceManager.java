@@ -30,6 +30,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.util.context.Context;
+import reactor.util.context.ContextView;
 
 import java.util.*;
 
@@ -248,6 +249,26 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
                                                               List<CapabilityResourceInstallEntity> installedResources,
                                                               CapabilityOperationContext operationContext,
                                                               Set<String> installingStack) {
+        return Flux.deferContextual(parentContext -> doInstall0(
+            capabilityId,
+            version,
+            request,
+            installedResources,
+            operationContext,
+            installingStack,
+            parentContext));
+    }
+
+    private Flux<ProgressState<InstalledResource>> doInstall0(String capabilityId,
+                                                              String version,
+                                                              CapabilityInstallRequest request,
+                                                              List<CapabilityResourceInstallEntity> installedResources,
+                                                              CapabilityOperationContext operationContext,
+                                                              Set<String> installingStack,
+                                                              ContextView parentContext) {
+        Context installContext = Context
+            .of(parentContext)
+            .put(CapabilityOperationContext.CONTEXT_KEY, operationContext);
         Sinks.ManyWithUpstream<ProgressState<InstalledResource>>
             progressStream = Sinks
             .unsafe()
@@ -280,7 +301,7 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
                 .then(Mono.<ProgressState<InstalledResource>>empty())
                 .onErrorResume(err -> Mono.just(ProgressState.error(err)))
                 .doFinally(ignore -> progressStream.emitComplete(Reactors.emitFailureHandler()))
-                .contextWrite(CapabilityOperationContext.makeCurrent(operationContext))
+                .contextWrite(installContext)
         );
 
 
@@ -292,7 +313,7 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
             .concatMap(state -> reportOperationEvent(operationContext,
                                                      progressEvent(capabilityId, version, state))
                 .thenReturn(state))
-            .contextWrite(CapabilityOperationContext.makeCurrent(operationContext));
+            .contextWrite(installContext);
     }
 
     private CapabilityInstallRequest normalizeRequest(CapabilityInstallRequest request) {

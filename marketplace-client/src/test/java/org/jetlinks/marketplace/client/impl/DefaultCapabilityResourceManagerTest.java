@@ -59,6 +59,33 @@ class DefaultCapabilityResourceManagerTest {
 
     @Test
     @SuppressWarnings({"unchecked", "rawtypes"})
+    void shouldPropagateReactorContextToProviderInstall() {
+        CapabilityMarketplaceClient client = mock(CapabilityMarketplaceClient.class);
+        ReactiveRepository<CapabilityResourceInstallEntity, String> repository = mock(ReactiveRepository.class);
+        AtomicReference<String> marker = new AtomicReference<>();
+
+        when(client.download("cap-1", "1.0.0")).thenReturn(Mono.just(packageFor("cap-1")));
+        when(client.reportOperationEvent(any())).thenReturn(Mono.empty());
+        when(repository.save(any(Collection.class))).thenReturn(Mono.just(mock(SaveResult.class)));
+
+        CapabilityProviders.register(provider(context -> Flux.deferContextual(ctx -> {
+            marker.set(ctx.getOrDefault("context-marker", ""));
+            return Flux.just(resource("tool", "resource-1", "data-1"));
+        })));
+
+        DefaultCapabilityResourceManager manager = new DefaultCapabilityResourceManager(client, repository);
+
+        manager
+            .install("cap-1", "1.0.0", Map.of())
+            .collectList()
+            .contextWrite(ctx -> ctx.put("context-marker", "request-context"))
+            .block(Duration.ofSeconds(5));
+
+        assertEquals("request-context", marker.get());
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
     void shouldIgnoreInstalledResourcesWhenInstallingAndKeepOldBindingsUntouched() {
         CapabilityMarketplaceClient client = mock(CapabilityMarketplaceClient.class);
         ReactiveRepository<CapabilityResourceInstallEntity, String> repository = mock(ReactiveRepository.class);
