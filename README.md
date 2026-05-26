@@ -43,3 +43,9 @@ Provider 可通过 `CapabilityContext.monitor().recorder()` 记录结构化动�
 依赖安装复用同一个 `CapabilityOperationContext`，并会检测循环依赖以避免递归安装。
 主能力 Provider 执行时，可通过 `CapabilityContext.loadDependencyResources()` 获取本次依赖安装后可见的依赖资源，
 或通过 `CapabilityContext.loadDependencyResources(type)` 按资源类型过滤依赖资源，用于读取依赖资源的 `dataId`。
+
+跨服务 Provider 安装时，`CapabilityContext.loadInstallResources()` 和
+`CapabilityContext.loadDependencyResources()` 只以 `marketplace-core` 中的
+`InstalledResource` 作为资源契约。安装编排侧会在进入 Provider 前把本地持久化实体转换为
+`InstalledResource`，集群命令回调侧也会在返回 RPC 前复制为基础 `InstalledResource`，避免远端服务加载
+`marketplace-client` 内部实体类。
