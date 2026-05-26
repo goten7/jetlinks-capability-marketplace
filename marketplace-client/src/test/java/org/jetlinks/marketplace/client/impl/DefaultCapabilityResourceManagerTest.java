@@ -149,6 +149,7 @@ class DefaultCapabilityResourceManagerTest {
             .loadInstallResources()
             .collectList()
             .flatMapMany(resources -> {
+                assertTrue(resources.stream().allMatch(resource -> resource.getClass() == InstalledResource.class));
                 assertEquals(List.of("old-visible"), resources
                     .stream()
                     .map(InstalledResource::getResourceId)

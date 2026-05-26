@@ -95,7 +95,12 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
 
         return installDependencies(pkg, upstream, installingStack)
             .flatMap(dependencyResources -> Mono.defer(() -> provider
-                .install(new CapabilityContextImpl(pkg, request, installedResources, dependencyResources, upstream))
+                .install(new CapabilityContextImpl(
+                    pkg,
+                    request,
+                    toInstalledResources(installedResources),
+                    toInstalledResources(dependencyResources),
+                    upstream))
                 .doOnNext(resource -> upstream
                     .emitNext(
                         ProgressState.progress("message.capability_installed_resource", "安装成功", resource),
@@ -197,6 +202,16 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
             .flatMap(ids -> CollectionUtils.isEmpty(ids)
                 ? Mono.empty()
                 : resourceRepository.deleteById(ids).then());
+    }
+
+    private List<InstalledResource> toInstalledResources(List<CapabilityResourceInstallEntity> resources) {
+        if (CollectionUtils.isEmpty(resources)) {
+            return List.of();
+        }
+        return resources
+            .stream()
+            .map(CapabilityResourceInstallEntity::toResource)
+            .toList();
     }
 
     @Transactional(rollbackFor = Throwable.class)
@@ -544,23 +559,21 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
     record CapabilityContextImpl(
         CapabilityPackage pkg,
         CapabilityInstallRequest request,
-        List<CapabilityResourceInstallEntity> installedResources,
-        List<CapabilityResourceInstallEntity> dependencyResources,
+        List<InstalledResource> installedResources,
+        List<InstalledResource> dependencyResources,
         Sinks.ManyWithUpstream<ProgressState<InstalledResource>> progress)
         implements CapabilityProvider.CapabilityContext, Monitor, Logger {
 
         @Override
         public Flux<InstalledResource> loadInstallResources() {
             return Flux
-                .fromIterable(installedResources == null ? CollectionUtils.emptyCollection() : installedResources)
-                .map(CapabilityResourceInstallEntity::toResource);
+                .fromIterable(installedResources == null ? List.of() : installedResources);
         }
 
         @Override
         public Flux<InstalledResource> loadDependencyResources() {
             return Flux
-                .fromIterable(dependencyResources == null ? CollectionUtils.emptyCollection() : dependencyResources)
-                .map(CapabilityResourceInstallEntity::toResource);
+                .fromIterable(dependencyResources == null ? List.of() : dependencyResources);
         }
 
 
