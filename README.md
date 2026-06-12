@@ -49,3 +49,9 @@ Provider 可通过 `CapabilityContext.monitor().recorder()` 记录结构化动�
 `InstalledResource` 作为资源契约。安装编排侧会在进入 Provider 前把本地持久化实体转换为
 `InstalledResource`，集群命令回调侧也会在返回 RPC 前复制为基础 `InstalledResource`，避免远端服务加载
 `marketplace-client` 内部实体类。
+
+## 已安装资源绑定主键
+
+`capability_resource_install` 的主键使用 `capabilityId + type + resourceId + dataId` 生成稳定摘要，
+用于表达一条逻辑安装绑定，而不是一次安装流水。相同能力资源重新安装、升级或补写版本时应复用同一主键，
+避免同一逻辑绑定因重复保存落成多条记录；版本号仍单独存储，不参与绑定主键生成。

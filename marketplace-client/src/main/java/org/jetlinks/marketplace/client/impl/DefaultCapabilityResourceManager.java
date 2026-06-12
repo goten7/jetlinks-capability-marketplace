@@ -4,6 +4,7 @@ import com.google.common.collect.Collections2;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.hswebframework.ezorm.rdb.mapping.ReactiveRepository;
+import org.hswebframework.web.bean.FastBeanCopier;
 import org.hswebframework.web.exception.NotFoundException;
 import org.hswebframework.web.exception.ValidationException;
 import org.jetlinks.core.monitor.Monitor;
@@ -33,6 +34,7 @@ import reactor.util.context.Context;
 import reactor.util.context.ContextView;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class DefaultCapabilityResourceManager implements CapabilityResourceManager {
@@ -339,17 +341,33 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
                                                                             Sinks.ManyWithUpstream<ProgressState<InstalledResource>> upstream,
                                                                             Set<String> installingStack) {
         CapabilityInfo info = pkg.getInfo();
-        List<CapabilityDependency> dependencies = info == null ? List.of() : info.getDependencies();
+        List<CapabilityDependency> dependencies = info == null ? Collections.emptyList() : info.getDependencies();
         if (CollectionUtils.isEmpty(dependencies)) {
             return Mono.just(Collections.emptyList());
         }
         return Flux
             .fromIterable(dependencies)
-            .concatMap(dependency -> installDependency(dependency, upstream, installingStack))
+            .concatMap(dependency -> {
+                //TODO 2026/5/15 还应该支持直接从请求来
+                CapabilityInstallRequest request = Optional
+                    .ofNullable(info)
+                    .map(CapabilityInfo::getDependenciesInstallRequest)
+                    .<Object>map(reqs -> reqs.get(dependency.getCapabilityId()))
+                    //兼容泛型解析失败
+                    .map(req -> {
+                        if (req instanceof CapabilityInstallRequest r) {
+                            return r;
+                        }
+                        return FastBeanCopier.copy(req, new CapabilityInstallRequest());
+                    })
+                    .orElse(new CapabilityInstallRequest());
+                return installDependency(dependency, request, upstream, installingStack);
+            })
             .collectList();
     }
 
     private Flux<CapabilityResourceInstallEntity> installDependency(CapabilityDependency dependency,
+                                                                    CapabilityInstallRequest request,
                                                                     Sinks.ManyWithUpstream<ProgressState<InstalledResource>> upstream,
                                                                     Set<String> installingStack) {
         if (dependency == null || !StringUtils.hasText(dependency.getCapabilityId())) {
@@ -361,6 +379,7 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
             .collectList()
             .flatMapMany(installedResources -> {
                 if (isDependencySatisfied(dependency, installedResources)) {
+                    //TODO 2026/6/10 要支持更新覆盖才对？
                     upstream.emitNext(
                         ProgressState.progress(
                             "message.capability_dependency_skip",
@@ -373,6 +392,7 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
                 }
                 return resolveDependencyVersion(dependency)
                     .flatMapMany(version -> installDependencyVersion(
+                        request,
                         dependencyId,
                         version.getVersion(),
                         CollectionUtils.isNotEmpty(installedResources),
@@ -396,7 +416,7 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
             .isPresent();
     }
 
-    private java.util.Optional<String> getMaxInstalledVersion(List<CapabilityResourceInstallEntity> installedResources) {
+    private Optional<String> getMaxInstalledVersion(List<CapabilityResourceInstallEntity> installedResources) {
         return installedResources
             .stream()
             .map(CapabilityResourceInstallEntity::getVersion)
@@ -416,13 +436,12 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
                 new ValidationException.NoStackTrace("error.capability_dependency_version_not_found")));
     }
 
-    private Mono<Void> installDependencyVersion(String capabilityId,
+    private Mono<Void> installDependencyVersion(CapabilityInstallRequest request,
+                                                String capabilityId,
                                                 String version,
                                                 boolean upgrade,
                                                 Sinks.ManyWithUpstream<ProgressState<InstalledResource>> upstream,
                                                 Set<String> installingStack) {
-        //TODO 2026/5/15 从安装包来、从请求来
-        CapabilityInstallRequest request = new CapabilityInstallRequest();
         Flux<ProgressState<InstalledResource>> progress = upgrade
             ? resolveUpgradeTargets(capabilityId, request)
             .flatMapMany(resources -> install0(capabilityId, version, request, resources, installingStack))
@@ -476,7 +495,7 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
                     .stream()
                     .map(CapabilityResourceInstallEntity::getDataId)
                     .filter(StringUtils::hasText)
-                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
 
                 if (dataIds.isEmpty()) {
                     return Mono.just(List.of());
@@ -494,11 +513,11 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
         CapabilityOperationEvent.Type type = state.getExtra() instanceof ActionRecord
             ? CapabilityOperationEvent.Type.action
             : switch (state.getType()) {
-                case error -> CapabilityOperationEvent.Type.failed;
-                case log -> CapabilityOperationEvent.Type.log;
-                case success -> CapabilityOperationEvent.Type.success;
-                default -> CapabilityOperationEvent.Type.progress;
-            };
+            case error -> CapabilityOperationEvent.Type.failed;
+            case log -> CapabilityOperationEvent.Type.log;
+            case success -> CapabilityOperationEvent.Type.success;
+            default -> CapabilityOperationEvent.Type.progress;
+        };
         CapabilityOperationEvent event = CapabilityOperationEvent.of(
             type,
             capabilityId,
