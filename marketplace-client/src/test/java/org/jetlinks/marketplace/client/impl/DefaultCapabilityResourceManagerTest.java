@@ -546,6 +546,55 @@ class DefaultCapabilityResourceManagerTest {
 
     @Test
     @SuppressWarnings({"unchecked", "rawtypes"})
+    void shouldPassDependencyInstallRequestToDependencyProvider() {
+        CapabilityMarketplaceClient client = mock(CapabilityMarketplaceClient.class);
+        ReactiveRepository<CapabilityResourceInstallEntity, String> repository = mock(ReactiveRepository.class);
+        ReactiveQuery<CapabilityResourceInstallEntity> dependencyQuery = mock(ReactiveQuery.class);
+        ReactiveQuery<CapabilityResourceInstallEntity> installedDependencyQuery = mock(ReactiveQuery.class);
+        AtomicReference<Map<String, Object>> dependencyConfiguration = new AtomicReference<>();
+
+        CapabilityInstallRequest dependencyRequest = CapabilityInstallRequest.ofConfiguration(
+            Map.of("model", Map.of("name", "dependency-model", "description", "dependency-description"))
+        );
+        CapabilityResourceInstallEntity installedDependency =
+            installEntity("binding-dep-installed", "dep-cap", "tool", "dep-cap-resource", "dep-cap-data");
+        installedDependency.setVersion("1.2.0");
+
+        when(client.download("main-cap", "1.0.0"))
+            .thenReturn(Mono.just(packageFor("main-cap",
+                                             "1.0.0",
+                                             List.of(dependency("dep-cap", ">=1.0.0,<2.0.0")),
+                                             Map.of("dep-cap", dependencyRequest))));
+        when(client.getVersions("dep-cap"))
+            .thenReturn(Flux.just(version("1.2.0")));
+        when(client.download("dep-cap", "1.2.0")).thenReturn(Mono.just(packageFor("dep-cap", "1.2.0")));
+        when(client.reportOperationEvent(any())).thenReturn(Mono.empty());
+        when(repository.createQuery()).thenReturn(dependencyQuery, installedDependencyQuery);
+        when(dependencyQuery.fetch()).thenReturn(Flux.empty());
+        when(installedDependencyQuery.fetch()).thenReturn(Flux.just(installedDependency));
+        when(repository.save(any(Collection.class))).thenReturn(Mono.just(mock(SaveResult.class)));
+
+        CapabilityProviders.register(provider(context -> {
+            String capabilityId = context.pkg().getInfo().getId();
+            if ("dep-cap".equals(capabilityId)) {
+                dependencyConfiguration.set(context.request().getConfiguration());
+            }
+            return Flux.just(resource("tool", capabilityId + "-resource", capabilityId + "-data"));
+        }));
+
+        DefaultCapabilityResourceManager manager = new DefaultCapabilityResourceManager(client, repository);
+
+        manager
+            .install("main-cap", "1.0.0", Map.of())
+            .collectList()
+            .block(Duration.ofSeconds(5));
+
+        assertEquals(Map.of("name", "dependency-model", "description", "dependency-description"),
+                     dependencyConfiguration.get().get("model"));
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
     void shouldInstallDependencyWithBlankVersionRange() {
         CapabilityMarketplaceClient client = mock(CapabilityMarketplaceClient.class);
         ReactiveRepository<CapabilityResourceInstallEntity, String> repository = mock(ReactiveRepository.class);
@@ -953,10 +1002,18 @@ class DefaultCapabilityResourceManagerTest {
     private CapabilityPackage packageFor(String capabilityId,
                                          String version,
                                          List<CapabilityDependency> dependencies) {
+        return packageFor(capabilityId, version, dependencies, null);
+    }
+
+    private CapabilityPackage packageFor(String capabilityId,
+                                         String version,
+                                         List<CapabilityDependency> dependencies,
+                                         Map<String, CapabilityInstallRequest> dependenciesInstallRequest) {
         CapabilityInfo info = new CapabilityInfo();
         info.setId(capabilityId);
         info.setProvider(PROVIDER_ID);
         info.setDependencies(dependencies);
+        info.setDependenciesInstallRequest(dependenciesInstallRequest);
 
         CapabilityPackage pkg = new CapabilityPackage();
         pkg.setInfo(info);

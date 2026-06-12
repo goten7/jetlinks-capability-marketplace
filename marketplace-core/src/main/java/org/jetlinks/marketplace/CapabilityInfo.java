@@ -39,6 +39,7 @@ public class CapabilityInfo implements Serializable {
 
     private String classifier;
     private List<CapabilityDependency> dependencies;
+    private Map<String, CapabilityInstallRequest> dependenciesInstallRequest;
 
     private Map<String, Object> metadata;
 }
