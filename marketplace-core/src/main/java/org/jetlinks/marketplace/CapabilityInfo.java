@@ -23,6 +23,7 @@ public class CapabilityInfo implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private String id;
+    private String code;
     private String name;
     /** 能力提供商，对应 {@link org.jetlinks.marketplace.spi.CapabilityProvider#getId()} */
     private String provider;
