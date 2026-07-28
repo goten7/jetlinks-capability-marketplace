@@ -30,10 +30,14 @@ public interface CapabilityProvider {
     String getName();
 
     /**
-     * 安装能力
+     * 安装能力.
+     *
+     * <p>返回结果表示本次安装目标范围内最终应保留的完整资源集合，而不是仅包含实际发生变更的增量集合。
+     * 安装编排会删除{@link CapabilityContext#loadInstallResources()}返回的旧资源绑定，再使用本方法返回结果重建绑定。
+     * 因资产权限、配置或业务判断未执行更新的旧资源，也必须原样包含在返回结果中；漏返将被视为移除对应安装绑定。</p>
      *
      * @param context 安装上下文
-     * @return 安装结果
+     * @return 本次目标范围内最终保留的完整安装资源集合
      */
     Flux<InstalledResource> install(CapabilityContext context);
 
@@ -41,9 +45,12 @@ public interface CapabilityProvider {
     interface CapabilityContext {
 
         /**
-         * 加载已安装的资源
+         * 加载本次安装或升级目标范围内的旧资源.
          *
-         * @return InstalledResource
+         * <p>{@link CapabilityProvider#install(CapabilityContext)}返回结果将完整替换这些旧资源绑定。
+         * Provider 只更新其中部分资源时，必须将未更新资源原样合并到安装结果中返回。</p>
+         *
+         * @return 本次目标范围内的旧资源
          */
         Flux<InstalledResource> loadInstallResources();
 

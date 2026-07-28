@@ -38,11 +38,14 @@ Provider 可通过 `CapabilityContext.monitor().recorder()` 记录结构化动�
 `CapabilityDependency.versionRange` 的可用版本中选择最高版本。`versionRange` 为空时选择最高可用版本；
 非空时支持逗号分隔的 AND 条件：`>=`、`>`、`<=`、`<`、`=`、`==`，裸版本按精确匹配处理。
 
-如果当前上下文已经存在可见的依赖安装记录，并且其最高安装版本满足 `versionRange`，则跳过依赖安装。
-如果依赖已安装但版本不满足，则复用升级流程；如果存在多个可见安装根且未指定升级目标，沿用现有升级目标歧义错误。
+当前上下文中全部可见的依赖安装记录会逐条与 `versionRange` 比较，所有满足范围的记录都会作为覆盖目标进入
+依赖 Provider，由 Provider 根据安装请求和旧资源判断是否更新；没有满足范围的记录时按首次安装处理，不覆盖旧记录。
 依赖安装复用同一个 `CapabilityOperationContext`，并会检测循环依赖以避免递归安装。
 主能力 Provider 执行时，可通过 `CapabilityContext.loadDependencyResources()` 获取本次依赖安装后可见的依赖资源，
 或通过 `CapabilityContext.loadDependencyResources(type)` 按资源类型过滤依赖资源，用于读取依赖资源的 `dataId`。
+
+依赖 Provider 的返回结果会完整替换本次传入的覆盖目标绑定。Provider 只更新部分目标时，必须同时返回
+未更新的旧资源；安装完成后，主能力上下文只加载版本仍满足 `versionRange` 的可见依赖资源。
 
 跨服务 Provider 安装时，`CapabilityContext.loadInstallResources()` 和
 `CapabilityContext.loadDependencyResources()` 只以 `marketplace-core` 中的

@@ -4,6 +4,7 @@ import org.hswebframework.ezorm.rdb.mapping.ReactiveQuery;
 import org.hswebframework.ezorm.rdb.mapping.ReactiveRepository;
 import org.hswebframework.ezorm.rdb.mapping.defaults.SaveResult;
 import org.hswebframework.web.exception.ValidationException;
+import org.hswebframework.web.i18n.LocaleUtils;
 import org.jetlinks.core.monitor.recorder.ActionRecord;
 import org.jetlinks.core.monitor.recorder.ActionRecorder;
 import org.jetlinks.marketplace.CapabilityDependency;
@@ -570,8 +571,9 @@ class DefaultCapabilityResourceManagerTest {
         when(client.download("dep-cap", "1.2.0")).thenReturn(Mono.just(packageFor("dep-cap", "1.2.0")));
         when(client.reportOperationEvent(any())).thenReturn(Mono.empty());
         when(repository.createQuery()).thenReturn(dependencyQuery, installedDependencyQuery);
-        when(dependencyQuery.fetch()).thenReturn(Flux.empty());
+        when(dependencyQuery.fetch()).thenReturn(Flux.just(installedDependency));
         when(installedDependencyQuery.fetch()).thenReturn(Flux.just(installedDependency));
+        when(repository.deleteById(any(Collection.class))).thenReturn(Mono.just(1));
         when(repository.save(any(Collection.class))).thenReturn(Mono.just(mock(SaveResult.class)));
 
         CapabilityProviders.register(provider(context -> {
@@ -636,76 +638,142 @@ class DefaultCapabilityResourceManagerTest {
 
     @Test
     @SuppressWarnings({"unchecked", "rawtypes"})
-    void shouldSkipInstalledDependencyWhenVersionMatchesRange() {
+    void shouldUpdateAllDependenciesMatchingVersionRange() {
         CapabilityMarketplaceClient client = mock(CapabilityMarketplaceClient.class);
         ReactiveRepository<CapabilityResourceInstallEntity, String> repository = mock(ReactiveRepository.class);
         ReactiveQuery<CapabilityResourceInstallEntity> dependencyQuery = mock(ReactiveQuery.class);
+        ReactiveQuery<CapabilityResourceInstallEntity> installedDependencyQuery = mock(ReactiveQuery.class);
         List<String> installedOrder = new ArrayList<>();
 
-        CapabilityResourceInstallEntity installedDependency =
-            installEntity("binding-dep", "dep-cap", "tool", "dep-old", "dep-data");
-        installedDependency.setVersion("1.5.0");
+        CapabilityResourceInstallEntity unmatchedDependency35 =
+            installEntity("binding-dep-35", "dep-cap", "tool", "dep-35", "dep-data-35");
+        unmatchedDependency35.setVersion("3.5.0");
+        CapabilityResourceInstallEntity matchedDependency2 =
+            installEntity("binding-dep-2", "dep-cap", "tool", "dep-2", "dep-data-2");
+        matchedDependency2.setVersion("2.0.0");
+        CapabilityResourceInstallEntity matchedDependency25 =
+            installEntity("binding-dep-25", "dep-cap", "tool", "dep-25", "dep-data-25");
+        matchedDependency25.setVersion("2.5.0");
+        CapabilityResourceInstallEntity updatedDependency2 =
+            installEntity("binding-dep-updated-2", "dep-cap", "tool", "dep-updated-2", "dep-data-2");
+        updatedDependency2.setVersion("2.8.0");
+        CapabilityResourceInstallEntity updatedDependency25 =
+            installEntity("binding-dep-updated-25", "dep-cap", "tool", "dep-updated-25", "dep-data-25");
+        updatedDependency25.setVersion("2.8.0");
 
         when(client.download("main-cap", "1.0.0"))
-            .thenReturn(Mono.just(packageFor("main-cap", "1.0.0", List.of(dependency("dep-cap", ">=1.0.0,<2.0.0")))));
+            .thenReturn(Mono.just(packageFor("main-cap", "1.0.0", List.of(dependency("dep-cap", ">=2.0.0,<3.0.0")))));
+        when(client.getVersions("dep-cap"))
+            .thenReturn(Flux.just(version("2.0.0"), version("2.8.0"), version("3.0.0")));
+        when(client.download("dep-cap", "2.8.0")).thenReturn(Mono.just(packageFor("dep-cap", "2.8.0")));
         when(client.reportOperationEvent(any())).thenReturn(Mono.empty());
-        when(repository.createQuery()).thenReturn(dependencyQuery);
-        when(dependencyQuery.fetch()).thenReturn(Flux.just(installedDependency));
+        when(repository.createQuery()).thenReturn(dependencyQuery, installedDependencyQuery);
+        when(dependencyQuery.fetch())
+            .thenReturn(Flux.just(unmatchedDependency35, matchedDependency2, matchedDependency25));
+        when(installedDependencyQuery.fetch())
+            .thenReturn(Flux.just(unmatchedDependency35, updatedDependency2, updatedDependency25));
+        when(repository.deleteById(any(Collection.class))).thenReturn(Mono.just(2));
         when(repository.save(any(Collection.class))).thenReturn(Mono.just(mock(SaveResult.class)));
 
         CapabilityProviders.register(provider(context -> {
-            installedOrder.add(context.pkg().getInfo().getId());
-            return Flux.just(resource("tool", "main-resource", "main-data"));
+            String capabilityId = context.pkg().getInfo().getId();
+            installedOrder.add(capabilityId);
+            if ("dep-cap".equals(capabilityId)) {
+                return context
+                    .loadInstallResources()
+                    .collectList()
+                    .flatMapMany(resources -> {
+                        assertEquals(List.of("dep-data-2", "dep-data-25"), resources
+                            .stream()
+                            .map(InstalledResource::getDataId)
+                            .toList());
+                        return Flux.just(
+                            resource("tool", "dep-updated-2", "dep-data-2"),
+                            resource("tool", "dep-updated-25", "dep-data-25")
+                        );
+                    });
+            }
+            return context
+                .loadDependencyResources()
+                .collectList()
+                .flatMapMany(resources -> {
+                    assertEquals(List.of("dep-data-2", "dep-data-25"), resources
+                        .stream()
+                        .map(InstalledResource::getDataId)
+                        .toList());
+                    return Flux.just(resource("tool", "main-resource", "main-data"));
+                });
         }));
 
         DefaultCapabilityResourceManager manager = new DefaultCapabilityResourceManager(client, repository);
 
-        manager
+        List<ProgressState<InstalledResource>> states = manager
             .install("main-cap", "1.0.0", Map.of())
             .collectList()
             .block(Duration.ofSeconds(5));
 
-        assertEquals(List.of("main-cap"), installedOrder);
-        verify(client, never()).getVersions("dep-cap");
-        verify(client, never()).download("dep-cap", "1.5.0");
-        verify(repository).save(any(Collection.class));
+        assertEquals(List.of("dep-cap", "main-cap"), installedOrder);
+        String upgradeMessage = LocaleUtils.resolveMessage(
+            "message.capability_dependency_upgrade",
+            "正在升级依赖能力，覆盖{0}条已安装资源",
+            2
+        );
+        assertTrue(states.stream().anyMatch(state -> upgradeMessage.equals(state.getMessage())));
+
+        ArgumentCaptor<Collection<String>> deleted = ArgumentCaptor.forClass(Collection.class);
+        verify(repository).deleteById(deleted.capture());
+        assertEquals(List.of("binding-dep-2", "binding-dep-25"), deleted.getValue().stream().toList());
     }
 
     @Test
     @SuppressWarnings({"unchecked", "rawtypes"})
-    void shouldUpgradeInstalledDependencyWhenVersionDoesNotMatchRange() {
+    void shouldInstallDependencyWithoutOverwritingNonMatchingResources() {
         CapabilityMarketplaceClient client = mock(CapabilityMarketplaceClient.class);
         ReactiveRepository<CapabilityResourceInstallEntity, String> repository = mock(ReactiveRepository.class);
         ReactiveQuery<CapabilityResourceInstallEntity> dependencyCheckQuery = mock(ReactiveQuery.class);
-        ReactiveQuery<CapabilityResourceInstallEntity> dependencyUpgradeQuery = mock(ReactiveQuery.class);
+        ReactiveQuery<CapabilityResourceInstallEntity> installedDependencyQuery = mock(ReactiveQuery.class);
         List<String> installedOrder = new ArrayList<>();
 
         CapabilityResourceInstallEntity installedDependency =
             installEntity("binding-dep", "dep-cap", "tool", "dep-old", "dep-data");
         installedDependency.setVersion("1.0.0");
+        CapabilityResourceInstallEntity newDependency =
+            installEntity("binding-dep-new", "dep-cap", "tool", "dep-new", "dep-data-new");
+        newDependency.setVersion("1.3.0");
 
         when(client.download("main-cap", "1.0.0"))
             .thenReturn(Mono.just(packageFor("main-cap", "1.0.0", List.of(dependency("dep-cap", ">=1.2.0,<2.0.0")))));
         when(client.getVersions("dep-cap")).thenReturn(Flux.just(version("1.1.0"), version("1.3.0")));
         when(client.download("dep-cap", "1.3.0")).thenReturn(Mono.just(packageFor("dep-cap", "1.3.0")));
         when(client.reportOperationEvent(any())).thenReturn(Mono.empty());
-        when(repository.createQuery()).thenReturn(dependencyCheckQuery, dependencyUpgradeQuery);
+        when(repository.createQuery()).thenReturn(dependencyCheckQuery, installedDependencyQuery);
         when(dependencyCheckQuery.fetch()).thenReturn(Flux.just(installedDependency));
-        when(dependencyUpgradeQuery.fetch()).thenReturn(Flux.just(installedDependency));
-        when(repository.deleteById(any(Collection.class))).thenReturn(Mono.just(1));
+        when(installedDependencyQuery.fetch()).thenReturn(Flux.just(installedDependency, newDependency));
         when(repository.save(any(Collection.class))).thenReturn(Mono.just(mock(SaveResult.class)));
 
-        CapabilityProviders.register(provider(context -> context
-            .loadInstallResources()
-            .collectList()
-            .flatMapMany(resources -> {
-                installedOrder.add(context.pkg().getInfo().getId());
-                if ("dep-cap".equals(context.pkg().getInfo().getId())) {
-                    assertEquals(List.of("dep-old"), resources.stream().map(InstalledResource::getResourceId).toList());
-                }
-                String capabilityId = context.pkg().getInfo().getId();
-                return Flux.just(resource("tool", capabilityId + "-resource", capabilityId + "-data"));
-            })));
+        CapabilityProviders.register(provider(context -> {
+            String capabilityId = context.pkg().getInfo().getId();
+            installedOrder.add(capabilityId);
+            if ("dep-cap".equals(capabilityId)) {
+                return context
+                    .loadInstallResources()
+                    .collectList()
+                    .flatMapMany(resources -> {
+                        assertEquals(List.of(), resources);
+                        return Flux.just(resource("tool", "dep-new", "dep-data-new"));
+                    });
+            }
+            return context
+                .loadDependencyResources()
+                .collectList()
+                .flatMapMany(resources -> {
+                    assertEquals(List.of("dep-data-new"), resources
+                        .stream()
+                        .map(InstalledResource::getDataId)
+                        .toList());
+                    return Flux.just(resource("tool", "main-resource", "main-data"));
+                });
+        }));
 
         DefaultCapabilityResourceManager manager = new DefaultCapabilityResourceManager(client, repository);
 
@@ -716,10 +784,7 @@ class DefaultCapabilityResourceManagerTest {
 
         assertEquals(List.of("dep-cap", "main-cap"), installedOrder);
         verify(client).download("dep-cap", "1.3.0");
-
-        ArgumentCaptor<Collection<String>> deleted = ArgumentCaptor.forClass(Collection.class);
-        verify(repository).deleteById(deleted.capture());
-        assertEquals(List.of("binding-dep"), deleted.getValue().stream().toList());
+        verify(repository, never()).deleteById(any(Collection.class));
     }
 
     @Test
@@ -872,27 +937,17 @@ class DefaultCapabilityResourceManagerTest {
 
     @Test
     @SuppressWarnings({"unchecked", "rawtypes"})
-    void shouldSkipStackDependencyWhenInstalledVersionMatchesRange() {
+    void shouldRejectStackDependencyEvenWhenInstalledVersionMatchesRange() {
         CapabilityMarketplaceClient client = mock(CapabilityMarketplaceClient.class);
         ReactiveRepository<CapabilityResourceInstallEntity, String> repository = mock(ReactiveRepository.class);
         ReactiveQuery<CapabilityResourceInstallEntity> dependencyCheckQuery = mock(ReactiveQuery.class);
-        ReactiveQuery<CapabilityResourceInstallEntity> dependencyUpgradeQuery = mock(ReactiveQuery.class);
         ReactiveQuery<CapabilityResourceInstallEntity> nestedDependencyQuery = mock(ReactiveQuery.class);
         ReactiveQuery<CapabilityResourceInstallEntity> stackDependencyQuery = mock(ReactiveQuery.class);
-        ReactiveQuery<CapabilityResourceInstallEntity> installedNestedDependencyQuery = mock(ReactiveQuery.class);
-        ReactiveQuery<CapabilityResourceInstallEntity> installedDependencyQuery = mock(ReactiveQuery.class);
         List<String> installedOrder = new ArrayList<>();
 
         CapabilityResourceInstallEntity installedDependency =
             installEntity("binding-dep", "dep-cap", "tool", "dep-old", "dep-data");
         installedDependency.setVersion("1.0.0");
-        CapabilityResourceInstallEntity upgradedDependency =
-            installEntity("binding-dep-upgraded", "dep-cap", "tool", "dep-cap-resource", "dep-cap-data");
-        upgradedDependency.setVersion("2.0.0");
-        CapabilityResourceInstallEntity installedNestedDependency =
-            installEntity("binding-nested", "nested-cap", "tool", "nested-cap-resource", "nested-cap-data");
-        installedNestedDependency.setVersion("1.0.0");
-
         when(client.download("main-cap", "1.0.0"))
             .thenReturn(Mono.just(packageFor("main-cap", "1.0.0", List.of(dependency("dep-cap", ">=2.0.0")))));
         when(client.getVersions("dep-cap")).thenReturn(Flux.just(version("2.0.0")));
@@ -904,19 +959,11 @@ class DefaultCapabilityResourceManagerTest {
         when(client.reportOperationEvent(any())).thenReturn(Mono.empty());
         when(repository.createQuery())
             .thenReturn(dependencyCheckQuery,
-                        dependencyUpgradeQuery,
                         nestedDependencyQuery,
-                        stackDependencyQuery,
-                        installedNestedDependencyQuery,
-                        installedDependencyQuery);
+                        stackDependencyQuery);
         when(dependencyCheckQuery.fetch()).thenReturn(Flux.just(installedDependency));
-        when(dependencyUpgradeQuery.fetch()).thenReturn(Flux.just(installedDependency));
         when(nestedDependencyQuery.fetch()).thenReturn(Flux.empty());
         when(stackDependencyQuery.fetch()).thenReturn(Flux.just(installedDependency));
-        when(installedNestedDependencyQuery.fetch()).thenReturn(Flux.just(installedNestedDependency));
-        when(installedDependencyQuery.fetch()).thenReturn(Flux.just(upgradedDependency));
-        when(repository.deleteById(any(Collection.class))).thenReturn(Mono.just(1));
-        when(repository.save(any(Collection.class))).thenReturn(Mono.just(mock(SaveResult.class)));
 
         CapabilityProviders.register(provider(context -> {
             installedOrder.add(context.pkg().getInfo().getId());
@@ -931,10 +978,10 @@ class DefaultCapabilityResourceManagerTest {
             .collectList()
             .block(Duration.ofSeconds(5));
 
-        assertEquals(List.of("nested-cap", "dep-cap", "main-cap"), installedOrder);
-        assertFalse(states.stream().anyMatch(state -> state.getType() == ProgressState.Type.error));
+        assertEquals(List.of(), installedOrder);
+        assertTrue(states.stream().anyMatch(state -> state.getType() == ProgressState.Type.error));
         verify(client, times(1)).getVersions("dep-cap");
-        verify(repository, times(3)).save(any(Collection.class));
+        verify(repository, never()).save(any(Collection.class));
     }
 
     @Test

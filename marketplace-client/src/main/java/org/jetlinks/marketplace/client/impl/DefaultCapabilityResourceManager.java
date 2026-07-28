@@ -7,6 +7,7 @@ import org.hswebframework.ezorm.rdb.mapping.ReactiveRepository;
 import org.hswebframework.web.bean.FastBeanCopier;
 import org.hswebframework.web.exception.NotFoundException;
 import org.hswebframework.web.exception.ValidationException;
+import org.hswebframework.web.i18n.LocaleUtils;
 import org.jetlinks.core.monitor.Monitor;
 import org.jetlinks.core.monitor.logger.Logger;
 import org.jetlinks.core.monitor.metrics.Metrics;
@@ -376,17 +377,9 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
         String dependencyId = dependency.getCapabilityId();
 
         return loadInstalledResourceEntities(CapabilityInstalledResourceFilterContext.capability(dependencyId))
+            .filter(resource -> matchesDependency(dependency, resource))
             .collectList()
-            .flatMapMany(installedResources -> {
-                if (isDependencySatisfied(dependency, installedResources)) {
-                    //TODO 2026/6/10 要支持更新覆盖才对？
-                    upstream.emitNext(
-                        ProgressState.progress(
-                            "message.capability_dependency_skip",
-                            "依赖能力已安装,跳过"),
-                        Reactors.emitFailureHandler());
-                    return Flux.fromIterable(installedResources);
-                }
+            .flatMapMany(matchedResources -> {
                 if (installingStack.contains(dependencyId)) {
                     return Flux.error(new ValidationException.NoStackTrace("error.capability_dependency_cycle_detected"));
                 }
@@ -395,33 +388,22 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
                         request,
                         dependencyId,
                         version.getVersion(),
-                        CollectionUtils.isNotEmpty(installedResources),
+                        matchedResources,
                         upstream,
                         installingStack)
                         .thenMany(Flux.defer(() -> loadInstalledResourceEntities(
-                            CapabilityInstalledResourceFilterContext.capability(dependencyId)))));
+                            CapabilityInstalledResourceFilterContext.capability(dependencyId))
+                            .filter(resource -> matchesDependency(dependency, resource)))));
             });
     }
 
-    private boolean isDependencySatisfied(CapabilityDependency dependency,
-                                          List<CapabilityResourceInstallEntity> installedResources) {
-        if (CollectionUtils.isEmpty(installedResources)) {
-            return false;
-        }
+    private boolean matchesDependency(CapabilityDependency dependency,
+                                      CapabilityResourceInstallEntity resource) {
         if (!StringUtils.hasText(dependency.getVersionRange())) {
             return true;
         }
-        return getMaxInstalledVersion(installedResources)
-            .filter(version -> matchesDependencyVersionRange(version, dependency.getVersionRange()))
-            .isPresent();
-    }
-
-    private Optional<String> getMaxInstalledVersion(List<CapabilityResourceInstallEntity> installedResources) {
-        return installedResources
-            .stream()
-            .map(CapabilityResourceInstallEntity::getVersion)
-            .filter(StringUtils::hasText)
-            .max(Version::compare);
+        return StringUtils.hasText(resource.getVersion())
+            && matchesDependencyVersionRange(resource.getVersion(), dependency.getVersionRange());
     }
 
     private Mono<CapabilityVersion> resolveDependencyVersion(CapabilityDependency dependency) {
@@ -439,18 +421,29 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
     private Mono<Void> installDependencyVersion(CapabilityInstallRequest request,
                                                 String capabilityId,
                                                 String version,
-                                                boolean upgrade,
+                                                List<CapabilityResourceInstallEntity> installedResources,
                                                 Sinks.ManyWithUpstream<ProgressState<InstalledResource>> upstream,
                                                 Set<String> installingStack) {
-        Flux<ProgressState<InstalledResource>> progress = upgrade
-            ? resolveUpgradeTargets(capabilityId, request)
-            .flatMapMany(resources -> install0(capabilityId, version, request, resources, installingStack))
-            : install0(capabilityId, version, request, List.of(), installingStack);
+        boolean upgrade = CollectionUtils.isNotEmpty(installedResources);
+        Flux<ProgressState<InstalledResource>> progress = install0(
+            capabilityId,
+            version,
+            request,
+            installedResources,
+            installingStack
+        );
+
+        String message = upgrade
+            ? LocaleUtils.resolveMessage(
+                "message.capability_dependency_upgrade",
+                "正在升级依赖能力，覆盖{0}条已安装资源",
+                installedResources.size())
+            : LocaleUtils.resolveMessage(
+                "message.capability_dependency_install",
+                "正在安装依赖能力");
 
         upstream.emitNext(
-            ProgressState.progress(
-                upgrade ? "message.capability_dependency_upgrade" : "message.capability_dependency_install",
-                upgrade ? "正在升级依赖能力" : "正在安装依赖能力"),
+            ProgressState.progress(message),
             Reactors.emitFailureHandler());
 
         return progress
@@ -500,6 +493,7 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
                 if (dataIds.isEmpty()) {
                     return Mono.just(List.of());
                 }
+                //非指定则只能在唯一情况下更新
                 if (dataIds.size() == 1) {
                     return Mono.just(resources);
                 }
