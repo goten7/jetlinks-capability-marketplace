@@ -97,6 +97,8 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
         CapabilityProvider provider = CapabilityProviders.getOrThrow(pkg.getInfo().getProvider());
 
         return installDependencies(pkg, upstream, installingStack)
+            // 依赖版本查询可能跨越远程异步边界，创建 Provider 上下文前先恢复请求语言。
+            .as(LocaleUtils::transform)
             .flatMap(dependencyResources -> Mono.defer(() -> provider
                 .install(new CapabilityContextImpl(
                     pkg,
@@ -104,6 +106,8 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
                     toInstalledResources(installedResources),
                     toInstalledResources(dependencyResources),
                     upstream))
+                // Provider 返回资源时仍可能切换线程，安装成功进度需要在同一语言上下文中生成。
+                .as(LocaleUtils::transform)
                 .doOnNext(resource -> upstream
                     .emitNext(
                         ProgressState.progress("message.capability_installed_resource", "安装成功", resource),
@@ -297,7 +301,7 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
             reportOperationEvent(
                 operationContext,
                 CapabilityOperationEvent.of(CapabilityOperationEvent.Type.download, capabilityId, version))
-                .then(client.download(capabilityId, version))
+                .then(client.download(capabilityId, version).as(LocaleUtils::transform))
                 .switchIfEmpty(Mono.error(() -> new NotFoundException.NoStackTrace(
                     "message.capability.not_found",
                     "功能未找到",
@@ -311,7 +315,8 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
                         operationContext,
                         CapabilityOperationEvent.of(CapabilityOperationEvent.Type.installing, capabilityId, pkg.getVersion())
                     )
-                        .then(savePackage(pkg, progressStream, request, installedResources, installingStack))
+                        .then(savePackage(pkg, progressStream, request, installedResources, installingStack)
+                                  .as(LocaleUtils::transform))
                         .then(reportOperationEvent(
                             operationContext,
                             successEvent(capabilityId, pkg.getVersion())));
@@ -323,14 +328,17 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
         );
 
 
-        return progressStream
-            .asFlux()
-            .doOnSubscribe((s) -> progressStream.emitNext(
+        return Flux
+            .just(true)
+            .as(LocaleUtils::transform)
+            .doOnNext(ignore -> progressStream.emitNext(
                 ProgressState.progress("message.capability_download_package", "正在下载功能包"),
                 Reactors.emitFailureHandler()))
-            .concatMap(state -> reportOperationEvent(operationContext,
-                                                     progressEvent(capabilityId, version, state))
-                .thenReturn(state))
+            .thenMany(progressStream
+                          .asFlux()
+                          .concatMap(state -> reportOperationEvent(operationContext,
+                                                                   progressEvent(capabilityId, version, state))
+                              .thenReturn(state)))
             .contextWrite(installContext);
     }
 
@@ -409,6 +417,7 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
     private Mono<CapabilityVersion> resolveDependencyVersion(CapabilityDependency dependency) {
         return client
             .getVersions(dependency.getCapabilityId())
+            .as(LocaleUtils::transform)
             .filter(CapabilityVersion::isAvailable)
             .filter(version -> StringUtils.hasText(version.getVersion()))
             .filter(version -> matchesDependencyVersionRange(version.getVersion(), dependency.getVersionRange()))
@@ -537,7 +546,7 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
             capabilityId,
             version
         );
-        event.setMessage("安装完成");
+        event.setMessage(LocaleUtils.resolveMessage("message.capability_install_complete", "安装完成"));
         return event;
     }
 
@@ -574,8 +583,22 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
         CapabilityInstallRequest request,
         List<InstalledResource> installedResources,
         List<InstalledResource> dependencyResources,
-        Sinks.ManyWithUpstream<ProgressState<InstalledResource>> progress)
+        Sinks.ManyWithUpstream<ProgressState<InstalledResource>> progress,
+        Locale locale)
         implements CapabilityProvider.CapabilityContext, Monitor, Logger {
+
+        CapabilityContextImpl(CapabilityPackage pkg,
+                              CapabilityInstallRequest request,
+                              List<InstalledResource> installedResources,
+                              List<InstalledResource> dependencyResources,
+                              Sinks.ManyWithUpstream<ProgressState<InstalledResource>> progress) {
+            this(pkg,
+                 request,
+                 installedResources,
+                 dependencyResources,
+                 progress,
+                 LocaleUtils.current());
+        }
 
         @Override
         public Flux<InstalledResource> loadInstallResources() {
@@ -640,7 +663,7 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
         @Override
         public void log(Level level, String message, Object... args) {
             progress.emitNext(
-                ProgressState.log(level.name(), message, args),
+                LocaleUtils.doWith(locale, () -> ProgressState.log(level.name(), message, args)),
                 Reactors.emitFailureHandler()
             );
         }
@@ -662,7 +685,7 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
                     ? "operation"
                     : String.valueOf(record.getAction());
                 progress.emitNext(
-                    ProgressState.progress(message, message, record),
+                    LocaleUtils.doWith(locale, () -> ProgressState.progress(message, message, record)),
                     Reactors.emitFailureHandler()
                 );
             }

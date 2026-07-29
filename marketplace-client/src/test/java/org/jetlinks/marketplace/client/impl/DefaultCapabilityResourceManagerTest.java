@@ -4,6 +4,7 @@ import org.hswebframework.ezorm.rdb.mapping.ReactiveQuery;
 import org.hswebframework.ezorm.rdb.mapping.ReactiveRepository;
 import org.hswebframework.ezorm.rdb.mapping.defaults.SaveResult;
 import org.hswebframework.web.exception.ValidationException;
+import org.hswebframework.web.i18n.MessageSourceInitializer;
 import org.hswebframework.web.i18n.LocaleUtils;
 import org.jetlinks.core.monitor.recorder.ActionRecord;
 import org.jetlinks.core.monitor.recorder.ActionRecorder;
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.springframework.context.support.StaticMessageSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -33,6 +35,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -83,6 +86,41 @@ class DefaultCapabilityResourceManagerTest {
             .block(Duration.ofSeconds(5));
 
         assertEquals("request-context", marker.get());
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void shouldResolveProviderLogByRequestLocale() {
+        StaticMessageSource messages = new StaticMessageSource();
+        messages.addMessage("message.capability_download_package", Locale.ENGLISH, "Downloading capability package");
+        messages.addMessage("message.marketplace.provider_install", Locale.ENGLISH, "Creating device product");
+        MessageSourceInitializer.init(messages);
+
+        CapabilityMarketplaceClient client = mock(CapabilityMarketplaceClient.class);
+        ReactiveRepository<CapabilityResourceInstallEntity, String> repository = mock(ReactiveRepository.class);
+
+        when(client.download("cap-1", "1.0.0"))
+            .thenReturn(Mono.delay(Duration.ofMillis(1)).thenReturn(packageFor("cap-1")));
+        when(client.reportOperationEvent(any())).thenReturn(Mono.empty());
+        when(repository.save(any(Collection.class))).thenReturn(Mono.just(mock(SaveResult.class)));
+
+        CapabilityProviders.register(provider(context -> {
+            context.monitor().logger().debug("message.marketplace.provider_install");
+            return Flux.just(resource("tool", "resource-1", "data-1"));
+        }));
+
+        DefaultCapabilityResourceManager manager = new DefaultCapabilityResourceManager(client, repository);
+
+        List<ProgressState<InstalledResource>> states = manager
+            .install("cap-1", "1.0.0", Map.of())
+            .collectList()
+            .contextWrite(LocaleUtils.useLocale(Locale.ENGLISH))
+            .block(Duration.ofSeconds(5));
+
+        assertTrue(states.stream()
+            .anyMatch(state -> "Downloading capability package".equals(state.getMessage())));
+        assertTrue(states.stream()
+            .anyMatch(state -> "Creating device product".equals(state.getMessage())));
     }
 
     @Test
