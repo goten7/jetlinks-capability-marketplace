@@ -47,6 +47,30 @@ Provider 可通过 `CapabilityContext.monitor().recorder()` 记录结构化动�
 依赖 Provider 的返回结果会完整替换本次传入的覆盖目标绑定。Provider 只更新部分目标时，必须同时返回
 未更新的旧资源；安装完成后，主能力上下文只加载版本仍满足 `versionRange` 的可见依赖资源。
 
+## 能力最新版本详情查询
+
+运行时能力市场只通过 `CapabilityMarketplaceClient` 访问 SaaS 能力市场，不直接依赖 SaaS 管理端的
+`MarketplaceResourceDetail`。公共契约新增 `CapabilityLatestVersionInfo`，在 `CapabilityInfo` 基础上携带最新
+`CapabilityVersion`；版本信息补充 `publishTime`、`others` 和 `dependencyDetails`，其中依赖详情仍使用
+`CapabilityLatestVersionInfo` 表达启用的依赖能力，并在其 `versionRange` 范围内选择最高版本。
+
+查询沿用 `CapabilitySearchRequest` 的分页和筛选语义；`paging` 默认为 `true`，设置为 `false` 时忽略
+`pageIndex` 和 `pageSize` 返回全部匹配结果。HTTP 与 Command 两条现有边界返回相同结构。
+运行时入口为 `POST /marketplace/capabilities/version/_search`。
+SaaS Manager 内部复用资源详情查询和直接依赖装配逻辑，在 `MarketplacePublicService` 统一转换为公共契约；
+Controller、Command Handler 和 Client 只负责参数与结果转发，不暴露 SaaS 内部实体和 DTO。
+
+本次只展开当前版本的直接依赖，依赖项自身的 `dependencyDetails` 不递归填充；发布时间原样返回版本
+`publishTime` 与 `others.contentPublishedAt`，由调用方按 `publishTime` 优先、`contentPublishedAt` 兜底的规则
+判断同版本内容是否更新。不改变现有能力安装时的 `versionRange` 解析和依赖安装行为。
+
+测试覆盖：
+
+- 公共查询返回能力基本信息、最新版本、发布时间、`others`，以及启用的直接依赖在版本范围内的最高版本。
+- 没有最新版本时 `version` 为 `null`；没有依赖时 `dependencyDetails` 为空集合，不产生递归查询或阻塞调用。
+- HTTP Client、Command Client、内部 Client 与运行时 Controller 使用同一 `CapabilityLatestVersionInfo` 契约。
+- SaaS 公开查询继续只返回启用资源，并沿用既有认证、可用性判断和数据脱敏逻辑。
+
 跨服务 Provider 安装时，`CapabilityContext.loadInstallResources()` 和
 `CapabilityContext.loadDependencyResources()` 只以 `marketplace-core` 中的
 `InstalledResource` 作为资源契约。安装编排侧会在进入 Provider 前把本地持久化实体转换为

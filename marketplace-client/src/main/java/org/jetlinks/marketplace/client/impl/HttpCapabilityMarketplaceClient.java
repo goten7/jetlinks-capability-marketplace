@@ -15,6 +15,7 @@ import org.jetlinks.marketplace.CapabilitySearchRequest;
 import org.jetlinks.marketplace.CapabilityTag;
 import org.jetlinks.marketplace.CapabilityTagClassifier;
 import org.jetlinks.marketplace.CapabilityVersion;
+import org.jetlinks.marketplace.CapabilityLatestVersionInfo;
 import org.jetlinks.marketplace.InstalledCapability;
 import org.jetlinks.marketplace.client.configuration.MarketplaceProperties;
 import org.jetlinks.marketplace.spi.CapabilityMarketplaceClient;
@@ -35,6 +36,7 @@ import java.util.List;
  *
  * <ul>
  *   <li>{@code POST {base}/api/v1/marketplace/capabilities/_search} — body: {@link CapabilitySearchRequest}}</li>
+ *   <li>{@code POST {base}/api/v1/marketplace/capabilities/version/_search} — body: {@link CapabilitySearchRequest}}</li>
  *   <li>{@code GET {base}/api/v1/marketplace/capabilities/{id}}</li>
  *   <li>{@code GET {base}/api/v1/marketplace/capabilities/{id}/availability}</li>
  *   <li>{@code GET {base}/api/v1/marketplace/capabilities/{id}/versions}</li>
@@ -77,6 +79,19 @@ public class HttpCapabilityMarketplaceClient implements CapabilityMarketplaceCli
                 .bodyValue(request)
                 .accept(MediaType.APPLICATION_NDJSON),
             CapabilityInfo.class
+        );
+    }
+
+    @Override
+    public Flux<CapabilityLatestVersionInfo> searchVersionInfo(CapabilitySearchRequest request) {
+        return exchangeToFlux(
+            webClient
+                .post()
+                .uri("/marketplace/capabilities/version/_search")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(request)
+                .accept(MediaType.APPLICATION_NDJSON),
+            CapabilityLatestVersionInfo.class
         );
     }
 

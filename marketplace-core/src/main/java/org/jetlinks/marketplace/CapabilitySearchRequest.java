@@ -29,6 +29,8 @@ public class CapabilitySearchRequest implements Serializable {
     private List<String> tags;
     private String classifier;
 
+    /** 是否启用分页，默认启用。 */
+    private boolean paging = true;
     private int pageIndex = 0;
     private int pageSize = 20;
 }

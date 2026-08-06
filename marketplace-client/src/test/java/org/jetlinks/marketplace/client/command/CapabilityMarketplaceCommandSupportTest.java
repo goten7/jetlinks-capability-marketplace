@@ -28,6 +28,8 @@ class CapabilityMarketplaceCommandSupportTest {
 
         CapabilityInfo info = new CapabilityInfo();
         info.setId("cap-1");
+        CapabilityLatestVersionInfo versionInfo = new CapabilityLatestVersionInfo();
+        versionInfo.setId("cap-1");
 
         CapabilityAvailability availability = new CapabilityAvailability();
         availability.setCapabilityId("cap-1");
@@ -54,6 +56,7 @@ class CapabilityMarketplaceCommandSupportTest {
         installedCapability.setCapabilityId("cap-1");
 
         when(client.search(any())).thenReturn(Flux.just(info));
+        when(client.searchVersionInfo(any())).thenReturn(Flux.just(versionInfo));
         when(client.getDetail("cap-1")).thenReturn(Mono.just(info));
         when(client.checkAvailability("cap-1")).thenReturn(Mono.just(availability));
         when(client.getVersions("cap-1")).thenReturn(Flux.just(version));
@@ -65,6 +68,10 @@ class CapabilityMarketplaceCommandSupportTest {
         when(client.getTags("classifier-1")).thenReturn(Flux.just(tag));
 
         assertEquals(List.of(info), support.search(new SearchCapabilityCommand().with(searchRequest)).collectList().block());
+        assertEquals(
+            List.of(versionInfo),
+            support.searchVersionInfo(new SearchCapabilityVersionInfoCommand().with(searchRequest)).collectList().block()
+        );
         assertEquals(info, support.getDetail(new GetCapabilityDetailCommand().setCapabilityId("cap-1")).block());
         assertEquals(availability, support.checkAvailability(new GetCapabilityAvailabilityCommand().setCapabilityId("cap-1")).block());
         assertEquals(List.of(version), support.getVersions(new GetCapabilityVersionsCommand().setCapabilityId("cap-1")).collectList().block());
@@ -76,6 +83,7 @@ class CapabilityMarketplaceCommandSupportTest {
         assertEquals(List.of(tag), support.getTags(new GetCapabilityTagsCommand().setClassifierId("classifier-1")).collectList().block());
 
         verify(client).search(argThat(request -> request != null && "demo".equals(request.getKeyword())));
+        verify(client).searchVersionInfo(argThat(request -> request != null && "demo".equals(request.getKeyword())));
         verify(client).getDetail("cap-1");
         verify(client).checkAvailability("cap-1");
         verify(client).getVersions("cap-1");

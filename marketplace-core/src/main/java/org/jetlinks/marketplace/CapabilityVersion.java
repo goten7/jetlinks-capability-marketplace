@@ -5,6 +5,8 @@ import lombok.Setter;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 能力版本信息.
@@ -26,9 +28,17 @@ public class CapabilityVersion implements Serializable, Comparable<CapabilityVer
     private String releaseNotes;
     private String minPlatformVersion;
     private long releaseTime;
+
     private long size;
     private String checksum;
     private boolean available = true;
+
+    /** 市场版本发布时间。 */
+    private Long publishTime;
+    /** 市场版本扩展信息。 */
+    private Map<String, Object> others;
+    /** 当前版本的直接依赖详情。 */
+    private List<CapabilityLatestVersionInfo> dependencyDetails;
 
     public Version version() {
         return Version.parseNullable(version);

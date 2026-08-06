@@ -8,6 +8,7 @@ import org.jetlinks.marketplace.CapabilityOperationEvent;
 import org.jetlinks.marketplace.CapabilityTag;
 import org.jetlinks.marketplace.CapabilityTagClassifier;
 import org.jetlinks.marketplace.CapabilityVersion;
+import org.jetlinks.marketplace.CapabilityLatestVersionInfo;
 import org.jetlinks.marketplace.InstalledCapability;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -23,6 +24,17 @@ import java.util.List;
 public interface CapabilityMarketplaceClient {
 
     Flux<CapabilityInfo> search(CapabilitySearchRequest request);
+
+    /**
+     * 搜索能力及其最新版本详情.
+     *
+     * @param request 搜索条件
+     * @return 能力及最新版本详情
+     * @since 2.12
+     */
+    default Flux<CapabilityLatestVersionInfo> searchVersionInfo(CapabilitySearchRequest request) {
+        return Flux.error(new UnsupportedOperationException("不支持查询能力最新版本详情"));
+    }
 
     Mono<CapabilityInfo> getDetail(String capabilityId);
 
