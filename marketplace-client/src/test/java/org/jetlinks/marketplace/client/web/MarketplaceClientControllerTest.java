@@ -25,6 +25,8 @@ class MarketplaceClientControllerTest {
 
         CapabilityInfo info = new CapabilityInfo();
         info.setId("cap-1");
+        CapabilityLatestVersionInfo versionInfo = new CapabilityLatestVersionInfo();
+        versionInfo.setId("cap-1");
 
         CapabilityAvailability availability = new CapabilityAvailability();
         availability.setCapabilityId("cap-1");
@@ -43,6 +45,7 @@ class MarketplaceClientControllerTest {
         installedCapability.setCapabilityId("cap-1");
 
         when(client.search(searchRequest)).thenReturn(Flux.just(info));
+        when(client.searchVersionInfo(searchRequest)).thenReturn(Flux.just(versionInfo));
         when(client.getDetail("cap-1")).thenReturn(Mono.just(info));
         when(client.checkAvailability("cap-1")).thenReturn(Mono.just(availability));
         when(client.getVersions("cap-1")).thenReturn(Flux.just(version));
@@ -52,6 +55,7 @@ class MarketplaceClientControllerTest {
         when(client.getTags("classifier-1")).thenReturn(Flux.just(tag));
 
         assertEquals(List.of(info), controller.search(searchRequest).collectList().block());
+        assertEquals(List.of(versionInfo), controller.searchVersionInfo(searchRequest).collectList().block());
         assertEquals(info, controller.getDetail("cap-1").block());
         assertEquals(availability, controller.checkAvailability("cap-1").block());
         assertEquals(List.of(version), controller.getVersions("cap-1").collectList().block());
@@ -61,6 +65,7 @@ class MarketplaceClientControllerTest {
         assertEquals(List.of(tag), controller.getTags("classifier-1").collectList().block());
 
         verify(client).search(searchRequest);
+        verify(client).searchVersionInfo(searchRequest);
         verify(client).getDetail("cap-1");
         verify(client).checkAvailability("cap-1");
         verify(client).getVersions("cap-1");

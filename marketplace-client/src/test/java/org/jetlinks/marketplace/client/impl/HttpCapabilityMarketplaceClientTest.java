@@ -9,6 +9,7 @@ import org.jetlinks.marketplace.CapabilitySearchRequest;
 import org.jetlinks.marketplace.CapabilityTag;
 import org.jetlinks.marketplace.CapabilityTagClassifier;
 import org.jetlinks.marketplace.CapabilityVersion;
+import org.jetlinks.marketplace.CapabilityLatestVersionInfo;
 import org.jetlinks.marketplace.InstalledCapability;
 import org.jetlinks.marketplace.client.configuration.MarketplaceProperties;
 import org.junit.jupiter.api.Test;
@@ -162,6 +163,9 @@ class HttpCapabilityMarketplaceClientTest {
                            {"id":"cap-2","name":"Capability 2"}
                            """),
             ndjsonResponse("""
+                           {"id":"cap-1","currentVersion":"1.0.0","version":{"version":"1.0.0","publishTime":100,"others":{"contentPublishedAt":90},"dependencyDetails":[{"id":"dep-1","version":{"version":"2.0.0","publishTime":80}}]}}
+                           """),
+            ndjsonResponse("""
                            {"version":"1.0.0","available":true}
                            """),
             jsonResponse("""
@@ -201,6 +205,7 @@ class HttpCapabilityMarketplaceClientTest {
         CapabilitySearchRequest searchRequest = new CapabilitySearchRequest();
         searchRequest.setKeyword("demo");
         List<CapabilityInfo> searched = client.search(searchRequest).collectList().block();
+        List<CapabilityLatestVersionInfo> versionInfos = client.searchVersionInfo(searchRequest).collectList().block();
         List<CapabilityVersion> versions = client.getVersions("cap-1").collectList().block();
         CapabilityPackage capabilityPackage = client.download("cap-1", "1.0.0").block();
 
@@ -215,6 +220,12 @@ class HttpCapabilityMarketplaceClientTest {
         assertThat(searched).hasSize(2);
         assertThat(searched.get(0).getId()).isEqualTo("cap-1");
         assertThat(searched.get(1).getId()).isEqualTo("cap-2");
+
+        assertThat(versionInfos).hasSize(1);
+        assertThat(versionInfos.get(0).getVersion().getPublishTime()).isEqualTo(100L);
+        assertThat(versionInfos.get(0).getVersion().getOthers()).containsEntry("contentPublishedAt", 90);
+        assertThat(versionInfos.get(0).getVersion().getDependencyDetails()).hasSize(1);
+        assertThat(versionInfos.get(0).getVersion().getDependencyDetails().get(0).getId()).isEqualTo("dep-1");
 
         assertThat(versions).hasSize(1);
         assertThat(versions.get(0).getVersion()).isEqualTo("1.0.0");
@@ -241,19 +252,20 @@ class HttpCapabilityMarketplaceClientTest {
         assertThat(tags.get(0).getId()).isEqualTo("tag-1");
         assertThat(tags.get(0).getCategoryId()).isEqualTo("classifier-3");
 
-        assertThat(requests).hasSize(8);
+        assertThat(requests).hasSize(9);
         assertThat(requests.get(0).method().name()).isEqualTo("POST");
         assertThat(requests.get(0).url().toString()).isEqualTo("https://marketplace.test/marketplace/capabilities/_search");
         assertThat(requests.get(0).headers().getFirst(HttpHeaders.AUTHORIZATION)).isEqualTo("Bearer secure-token");
         assertThat(requests.get(0).headers().getFirst(HttpHeaders.CONTENT_TYPE)).contains(MediaType.APPLICATION_JSON_VALUE);
 
-        assertThat(requests.get(1).url().toString()).isEqualTo("https://marketplace.test/marketplace/capabilities/cap-1/versions");
-        assertThat(requests.get(2).url().toString()).isEqualTo("https://marketplace.test/marketplace/capabilities/cap-1/versions/1.0.0/package");
-        assertThat(requests.get(3).url().toString()).isEqualTo("https://marketplace.test/marketplace/capabilities/_check-updates");
-        assertThat(requests.get(4).url().toString()).isEqualTo("https://marketplace.test/marketplace/tag-classifiers?type=plugin");
-        assertThat(requests.get(5).url().toString()).isEqualTo("https://marketplace.test/marketplace/tag-classifiers");
-        assertThat(requests.get(6).url().toString()).isEqualTo("https://marketplace.test/marketplace/tag-classifiers/classifier-3");
-        assertThat(requests.get(7).url().toString()).isEqualTo("https://marketplace.test/marketplace/tags?classifierId=classifier-3");
+        assertThat(requests.get(1).url().toString()).isEqualTo("https://marketplace.test/marketplace/capabilities/version/_search");
+        assertThat(requests.get(2).url().toString()).isEqualTo("https://marketplace.test/marketplace/capabilities/cap-1/versions");
+        assertThat(requests.get(3).url().toString()).isEqualTo("https://marketplace.test/marketplace/capabilities/cap-1/versions/1.0.0/package");
+        assertThat(requests.get(4).url().toString()).isEqualTo("https://marketplace.test/marketplace/capabilities/_check-updates");
+        assertThat(requests.get(5).url().toString()).isEqualTo("https://marketplace.test/marketplace/tag-classifiers?type=plugin");
+        assertThat(requests.get(6).url().toString()).isEqualTo("https://marketplace.test/marketplace/tag-classifiers");
+        assertThat(requests.get(7).url().toString()).isEqualTo("https://marketplace.test/marketplace/tag-classifiers/classifier-3");
+        assertThat(requests.get(8).url().toString()).isEqualTo("https://marketplace.test/marketplace/tags?classifierId=classifier-3");
     }
 
     @Test

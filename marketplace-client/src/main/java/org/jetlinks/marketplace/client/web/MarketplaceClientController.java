@@ -30,6 +30,12 @@ public class MarketplaceClientController {
         return client.search(request);
     }
 
+    @PostMapping("/capabilities/version/_search")
+    @Operation(summary = "搜索能力最新版本详情")
+    public Flux<CapabilityLatestVersionInfo> searchVersionInfo(@RequestBody CapabilitySearchRequest request) {
+        return client.searchVersionInfo(request);
+    }
+
     @GetMapping("/capabilities/{id}")
     @Operation(summary = "获取能力详情")
     public Mono<CapabilityInfo> getDetail(@PathVariable String id) {

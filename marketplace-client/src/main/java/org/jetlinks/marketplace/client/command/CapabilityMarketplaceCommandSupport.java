@@ -19,6 +19,11 @@ public class CapabilityMarketplaceCommandSupport {
     }
 
     @CommandHandler
+    public Flux<CapabilityLatestVersionInfo> searchVersionInfo(SearchCapabilityVersionInfoCommand request) {
+        return client.searchVersionInfo(request.asRequest());
+    }
+
+    @CommandHandler
     public Mono<CapabilityInfo> getDetail(GetCapabilityDetailCommand request) {
         return client.getDetail(request.getCapabilityId());
     }
