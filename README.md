@@ -82,3 +82,26 @@ Controller、Command Handler 和 Client 只负责参数与结果转发，不暴�
 `capability_resource_install` 的主键使用 `capabilityId + type + resourceId + dataId` 生成稳定摘要，
 用于表达一条逻辑安装绑定，而不是一次安装流水。相同能力资源重新安装、升级或补写版本时应复用同一主键，
 避免同一逻辑绑定因重复保存落成多条记录；版本号仍单独存储，不参与绑定主键生成。
+
+## 安装资源资产类型转换与绑定
+
+能力资源的 `type` 表示能力 Provider 暴露的资源类型。安装资源资产类型优先通过 `CapabilityProvider`
+的 `resolveAssetType(String)` 转换；Provider 缺失或返回空 Mono 时，marketplace-client 的安装资源解析工具会回退使用
+`CapabilityResourceInstallEntity.type`。
+
+安装记录额外保存 Provider ID，资产权限过滤时据此解析当前 Provider，再调用同一转换方法；不修改公共的
+`InstalledResource`，也不把转换后的资产类型写入安装资源。安装记录保存完成后由 marketplace-client 的安装后扩展点通知
+assets-component，后者使用相同的 Provider 转换结果按资产类型批量绑定当前资产持有人。
+业务侧需要处理 `CapabilityResourceInstallEntity` 时，统一使用 marketplace-client 提供的 `CapabilityProviderUtils`
+解析为 `ResolvedAssetTypeInstalledResource`，统一处理 Provider 转换与资源类型回退。
+
+本次实施范围：
+
+- marketplace-core：增加资源类型到资产类型的响应式转换 SPI，默认按资源类型作为资产类型返回。
+- marketplace-client：保存 Provider ID，增加安装后处理 SPI 和安装资源资产类型解析工具，在 `savePackage` 保存安装记录后调用。
+- assets-component：按 Provider 转换结果过滤已安装资源，并自动绑定有资产类型和数据 ID 的资源。
+- 集群 Provider：通过 RPC 远程调用实际 Provider 的转换方法，并在 Cluster Provider 本地使用 Map 缓存正、负结果；Provider 刷新时清空。
+
+测试目标：覆盖资产类型转换、Provider 返回空 Mono 时回退资源类型、Provider 缺失时回退资源类型、批量自动绑定、安装记录保存失败时不执行后处理，
+以及集群 Provider 远程转换和缓存刷新行为。当前按仓库协作约束不自动新增或修改测试；涉及仓库的 `git diff --check` 已通过，Java
+编译和测试未自动执行，请开发者切换 Java 21 后自行验证。

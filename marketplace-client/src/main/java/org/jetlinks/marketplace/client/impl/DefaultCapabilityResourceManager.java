@@ -1,6 +1,5 @@
 package org.jetlinks.marketplace.client.impl;
 
-import com.google.common.collect.Collections2;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.hswebframework.ezorm.rdb.mapping.ReactiveRepository;
@@ -22,6 +21,7 @@ import org.jetlinks.marketplace.client.CapabilityResourceManager;
 import org.jetlinks.marketplace.client.entity.CapabilityResourceInstallEntity;
 import org.jetlinks.marketplace.client.spi.CapabilityInstalledResourceFilterContext;
 import org.jetlinks.marketplace.client.spi.CapabilityInstalledResourceInterceptor;
+import org.jetlinks.marketplace.client.spi.CapabilityInstalledResourcePostProcessor;
 import org.jetlinks.marketplace.spi.CapabilityMarketplaceClient;
 import org.jetlinks.marketplace.spi.CapabilityProvider;
 import org.jetlinks.marketplace.spi.CapabilityProviders;
@@ -43,20 +43,31 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
     private final CapabilityMarketplaceClient client;
     private final ReactiveRepository<CapabilityResourceInstallEntity, String> resourceRepository;
     private final List<CapabilityInstalledResourceInterceptor> installedResourceInterceptors;
+    private final List<CapabilityInstalledResourcePostProcessor> installedResourcePostProcessors;
 
     public DefaultCapabilityResourceManager(CapabilityMarketplaceClient client,
                                             ReactiveRepository<CapabilityResourceInstallEntity, String> resourceRepository) {
-        this(client, resourceRepository, List.of());
+        this(client, resourceRepository, List.of(), List.of());
     }
 
     public DefaultCapabilityResourceManager(CapabilityMarketplaceClient client,
                                             ReactiveRepository<CapabilityResourceInstallEntity, String> resourceRepository,
                                             List<CapabilityInstalledResourceInterceptor> installedResourceInterceptors) {
+        this(client, resourceRepository, installedResourceInterceptors, List.of());
+    }
+
+    public DefaultCapabilityResourceManager(CapabilityMarketplaceClient client,
+                                            ReactiveRepository<CapabilityResourceInstallEntity, String> resourceRepository,
+                                            List<CapabilityInstalledResourceInterceptor> installedResourceInterceptors,
+                                            List<CapabilityInstalledResourcePostProcessor> installedResourcePostProcessors) {
         this.client = client;
         this.resourceRepository = resourceRepository;
         this.installedResourceInterceptors = installedResourceInterceptors == null
             ? List.of()
             : List.copyOf(installedResourceInterceptors);
+        this.installedResourcePostProcessors = installedResourcePostProcessors == null
+            ? List.of()
+            : List.copyOf(installedResourcePostProcessors);
     }
 
 
@@ -120,15 +131,27 @@ public class DefaultCapabilityResourceManager implements CapabilityResourceManag
 
                     // 创建绑定信息
                     if (CollectionUtils.isNotEmpty(resources)) {
+                        List<CapabilityResourceInstallEntity> entities = resources
+                            .stream()
+                            .map(resource -> CapabilityResourceInstallEntity.from(resource, pkg))
+                            .toList();
                         task = task.then(
-                            resourceRepository.save(
-                                Collections2.transform(resources, res -> CapabilityResourceInstallEntity.from(res, pkg))
-                            ).then()
+                            resourceRepository
+                                .save(entities)
+                                .then(processInstalledResources(provider, entities))
                         );
                     }
 
                     return task.then();
                 })));
+    }
+
+    private Mono<Void> processInstalledResources(CapabilityProvider provider,
+                                                  Collection<CapabilityResourceInstallEntity> resources) {
+        return Flux
+            .fromIterable(installedResourcePostProcessors)
+            .concatMap(processor -> processor.process(provider, resources))
+            .then();
     }
 
 

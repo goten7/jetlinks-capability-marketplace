@@ -3,7 +3,6 @@ package org.jetlinks.marketplace.spi;
 import org.jetlinks.core.monitor.Monitor;
 import org.jetlinks.marketplace.CapabilityInstallRequest;
 import org.jetlinks.marketplace.CapabilityPackage;
-import org.jetlinks.marketplace.InstalledCapability;
 import org.jetlinks.marketplace.InstalledResource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -28,6 +27,20 @@ public interface CapabilityProvider {
      * 名称
      */
     String getName();
+
+    /**
+     * 解析资源对应的资产类型.
+     *
+     * <p>资源类型是能力市场内部的资源标识，不一定等于平台资产类型。默认直接返回资源类型。
+     * 返回 {@link Mono#empty()} 表示未解析到资产类型，调用方可按自身规则回退处理。</p>
+     *
+     * @param resourceType 能力 Provider 暴露的资源类型，可能为空
+     * @return 资产类型 ID；未解析到资产类型时返回空 Mono。实现不得返回 {@code null}
+     * @since 2.12
+     */
+    default Mono<String> resolveAssetType(String resourceType) {
+        return Mono.justOrEmpty(resourceType);
+    }
 
     /**
      * 安装能力.
