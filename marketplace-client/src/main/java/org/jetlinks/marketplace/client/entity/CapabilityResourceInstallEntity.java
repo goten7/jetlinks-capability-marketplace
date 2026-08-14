@@ -23,7 +23,7 @@ import java.util.List;
 
 /**
  * 能力资源实体.
- * 用于存储已安装的能力资源信息，包括资源类型、关联的能力ID、资源ID、数据ID和版本等信息.
+ * 用于存储已安装的能力资源信息，包括资源类型、关联的能力ID、Provider ID、资源ID、数据ID和版本等信息.
  *
  * @author zhouhao
  * @since 2.12
@@ -50,6 +50,16 @@ public class CapabilityResourceInstallEntity extends ExtendableEntity<String> im
     @Column(length = 64, nullable = false)
     @Schema(description = "能力ID")
     private String capabilityId;
+
+    /**
+     * 能力 Provider ID.
+     *
+     * <p>用于根据 Provider 的资源类型转换规则解析资产类型。该字段允许为空，以兼容历史安装记录；
+     * 为空时不根据资源类型猜测资产类型。</p>
+     */
+    @Column(length = 64)
+    @Schema(description = "能力Provider ID")
+    private String providerId;
 
     /**
      * 资源ID
@@ -126,6 +136,7 @@ public class CapabilityResourceInstallEntity extends ExtendableEntity<String> im
         CapabilityResourceInstallEntity entity = new CapabilityResourceInstallEntity()
             .copyFrom(resource);
         entity.setCapabilityId(capabilityPackage.getInfo().getId());
+        entity.setProviderId(capabilityPackage.getInfo().getProvider());
         if (entity.getVersion() == null) {
             entity.setVersion(capabilityPackage.getVersion());
         }

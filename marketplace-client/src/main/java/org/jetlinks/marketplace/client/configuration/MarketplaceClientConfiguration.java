@@ -7,6 +7,7 @@ import org.jetlinks.marketplace.client.entity.CapabilityResourceInstallEntity;
 import org.jetlinks.marketplace.client.impl.DefaultCapabilityResourceManager;
 import org.jetlinks.marketplace.client.impl.HttpCapabilityMarketplaceClient;
 import org.jetlinks.marketplace.client.spi.CapabilityInstalledResourceInterceptor;
+import org.jetlinks.marketplace.client.spi.CapabilityInstalledResourcePostProcessor;
 import org.jetlinks.marketplace.client.web.MarketplaceClientController;
 import org.jetlinks.marketplace.client.web.MarketplaceClientResourceController;
 import org.jetlinks.marketplace.spi.CapabilityMarketplaceClient;
@@ -49,8 +50,14 @@ public class MarketplaceClientConfiguration {
     @ConditionalOnMissingBean(CapabilityResourceManager.class)
     public DefaultCapabilityResourceManager capabilityResourceManager(CapabilityMarketplaceClient client,
                                                                       ReactiveRepository<CapabilityResourceInstallEntity, String> resourceRepository,
-                                                                      List<CapabilityInstalledResourceInterceptor> installedResourceInterceptors) {
-        return new DefaultCapabilityResourceManager(client, resourceRepository, installedResourceInterceptors);
+                                                                      List<CapabilityInstalledResourceInterceptor> installedResourceInterceptors,
+                                                                      List<CapabilityInstalledResourcePostProcessor> installedResourcePostProcessors) {
+        return new DefaultCapabilityResourceManager(
+            client,
+            resourceRepository,
+            installedResourceInterceptors,
+            installedResourcePostProcessors
+        );
     }
 
 
