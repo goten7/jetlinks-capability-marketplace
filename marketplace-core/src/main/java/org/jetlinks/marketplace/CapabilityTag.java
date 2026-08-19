@@ -1,5 +1,6 @@
 package org.jetlinks.marketplace;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -29,10 +30,14 @@ public class CapabilityTag implements Serializable {
 
     private String description;
 
-    /**
-     * 按展示字段和语言代码组织的国际化文本。
-     */
-    private Map<String, Map<String, String>> i18nMessages;
+//    /**
+//     * 按展示字段和语言代码组织的国际化文本。
+//     */
+//    private Map<String, Map<String, String>> i18nMessages;
+
+    private String i18nName;
+
+    private String i18nDescription;
 
     /**
      * 展示用图标：可为图片 URL、或颜色值（如 #RRGGBB、rgb()），由前端解析样式。
