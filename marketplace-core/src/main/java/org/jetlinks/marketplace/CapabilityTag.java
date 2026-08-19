@@ -6,6 +6,7 @@ import lombok.Setter;
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 能力标签信息.
@@ -27,6 +28,11 @@ public class CapabilityTag implements Serializable {
     private String categoryId;
 
     private String description;
+
+    /**
+     * 按展示字段和语言代码组织的国际化文本。
+     */
+    private Map<String, Map<String, String>> i18nMessages;
 
     /**
      * 展示用图标：可为图片 URL、或颜色值（如 #RRGGBB、rgb()），由前端解析样式。
