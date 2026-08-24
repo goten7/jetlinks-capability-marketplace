@@ -48,6 +48,31 @@ class CapabilityResourceInstallEntityTest {
         assertThat(first.getId()).isNotEqualTo(second.getId());
     }
 
+    @Test
+    void shouldExposeAuditFieldsWhenConvertingToResourceDetail() {
+        CapabilityResourceInstallEntity entity = new CapabilityResourceInstallEntity();
+        entity.setType("tool");
+        entity.setCapabilityId("cap-1");
+        entity.setProviderId("provider-1");
+        entity.setResourceId("resource-1");
+        entity.setDataId("data-1");
+        entity.setVersion("1.0.0");
+        entity.setCreatorId("creator-1");
+        entity.setCreateTime(10L);
+        entity.setModifierId("modifier-1");
+        entity.setModifyTime(20L);
+
+        InstalledResource resource = entity.toResource();
+
+        assertThat(resource).isInstanceOf(InstalledResourceDetail.class);
+        InstalledResourceDetail detail = (InstalledResourceDetail) resource;
+        assertThat(detail.getProviderId()).isEqualTo("provider-1");
+        assertThat(detail.getCreatorId()).isEqualTo("creator-1");
+        assertThat(detail.getCreateTime()).isEqualTo(10L);
+        assertThat(detail.getModifierId()).isEqualTo("modifier-1");
+        assertThat(detail.getModifyTime()).isEqualTo(20L);
+    }
+
     private static CapabilityPackage capabilityPackage(String capabilityId, String version) {
         CapabilityInfo info = new CapabilityInfo();
         info.setId(capabilityId);
